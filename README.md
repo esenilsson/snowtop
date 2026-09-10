@@ -19,8 +19,61 @@ own private session so its monitoring queries can be hidden from the overview.
 
 ## Requirements
 
-- [`uv`](https://docs.astral.sh/uv/) — manages the Python version and deps for you.
-- A Snowflake connection in `~/.snowflake/connections.toml` (you already have `DK95507`).
+- [`uv`](https://docs.astral.sh/uv/) — it installs Python 3.11+ and dependencies.
+- A Snowflake account and user that can authenticate from this machine.
+- A connection profile in `~/.snowflake/connections.toml`.
+- `USAGE` on at least one database. Snowtop needs a database selected to call the
+  `INFORMATION_SCHEMA.QUERY_HISTORY()` table function.
+
+## Configure Snowflake
+
+Snowtop uses the [Snowflake Python Connector's connection configuration](https://docs.snowflake.com/en/developer-guide/python-connector/python-connector-connect).
+Create `~/.snowflake/connections.toml` with a named profile:
+
+```toml
+[snowtop]
+account = "myorg-myaccount"
+user = "me@example.com"
+authenticator = "externalbrowser" # opens your SSO browser
+role = "SNOWTOP_MONITOR"           # optional; use your normal role if omitted
+database = "ANALYTICS"             # any database this role can use
+```
+
+For a default profile, create `~/.snowflake/config.toml`:
+
+```toml
+default_connection_name = "snowtop"
+```
+
+Then run `uv run snowtop`, or choose a profile explicitly:
+
+```bash
+uv run snowtop --connection snowtop
+```
+
+Browser SSO is the intended interactive setup. Snowtop never needs a warehouse because it reads
+Snowflake metadata. Keep these files private, especially if a profile uses a password or token:
+
+```bash
+chmod 700 ~/.snowflake
+chmod 600 ~/.snowflake/connections.toml ~/.snowflake/config.toml
+```
+
+Snowtop shows your own query history with an ordinary role. To see other users' queries, grant
+the selected role `MONITOR` or `OPERATE` on the relevant warehouses; `ACCOUNTADMIN` is not
+needed. Snowflake's [QUERY_HISTORY privileges](https://docs.snowflake.com/en/sql-reference/functions/query_history)
+determine exactly what is visible.
+
+```sql
+GRANT USAGE ON DATABASE ANALYTICS TO ROLE SNOWTOP_MONITOR;
+GRANT MONITOR ON WAREHOUSE REPORTING_WH TO ROLE SNOWTOP_MONITOR;
+GRANT ROLE SNOWTOP_MONITOR TO USER your_user;
+```
+
+At startup Snowtop connects with this profile, selects its configured database (or another
+database the role can use), applies a unique query tag to its private session, and queries
+`INFORMATION_SCHEMA.QUERY_HISTORY()`. That history is limited to the previous seven days and
+contains only the queries the active role can view.
 
 ## Run
 
@@ -78,19 +131,19 @@ uv run snowtop --once --history --since 1d   # last day
 
 ## Whose queries you see (scope)
 
-Scope follows your **role's privileges**: a role with account-wide **MONITOR** (e.g.
-`ACCOUNTADMIN`) sees every user's queries; any other role sees only your own. Override the role
-with `-r/--role`:
+Scope follows your **role's privileges**. By default, you see your own queries. A role with
+`MONITOR` or `OPERATE` on a warehouse can also see queries that ran there. Override the profile's
+role for one invocation with `-r/--role`:
 
 ```bash
-uv run snowtop -r ACCOUNTADMIN
+uv run snowtop -r SNOWTOP_MONITOR
 ```
 
 ## All options
 
 ```
 -c, --connection   named connection from connections.toml (default: your default)
--r, --role         override role (use one with MONITOR to see all users)
+-r, --role         override role (use MONITOR/OPERATE on relevant warehouses to see other users)
     --history      start in history mode instead of live
     --since DUR    history window: 30m / 4h / 1d (default 1d)
     --limit N      max rows to fetch (default 1000)
@@ -106,6 +159,5 @@ uv run snowtop -r ACCOUNTADMIN
 
 - First run opens the browser once for SSO; `keyring` then caches the token so later runs
   reuse it.
-- Your `connections.toml` (what the Python connector reads) has no role set, so it uses your
-  default role — which resolves to `ACCOUNTADMIN`, giving account-wide visibility. Pin a
-  different role with `-r` if you prefer.
+- Snowtop assigns a unique query tag to its private session and hides those metadata queries by
+  default. Pass `--show-snowtop-queries` to include them.
