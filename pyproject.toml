@@ -1,0 +1,23 @@
+[project]
+name = "snowtop"
+version = "0.1.0"
+description = "Watch ongoing (running/queued) Snowflake queries from the terminal."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    # secure-local-storage pulls in keyring so the SSO/MFA token is cached
+    # (avoids a browser popup on every run).
+    "snowflake-connector-python[secure-local-storage]>=3",
+    "rich>=13",
+    "textual>=0.60",
+]
+
+[project.scripts]
+snowtop = "snowtop:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+only-include = ["snowtop.py"]
