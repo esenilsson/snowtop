@@ -41,6 +41,9 @@ _COLUMNS = (
 )
 
 _RUNNING_STATUSES = "('RUNNING', 'QUEUED', 'BLOCKED', 'RESUMING_WAREHOUSE')"
+_TERMINAL_CONTROL_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+_MAX_HISTORY_MINUTES = 7 * 24 * 60
+_MAX_RESULT_LIMIT = 10_000
 
 
 def build_query(
@@ -178,7 +181,17 @@ def fmt_time(dt) -> str:
 
 
 def oneline(text: str, limit: int = 300) -> str:
-    return " ".join((text or "").split())[:limit] or "-"
+    return " ".join(safe_terminal_text(text).split())[:limit] or "-"
+
+
+def safe_terminal_text(value) -> str:
+    """Remove terminal control codes from Snowflake-supplied display text.
+
+    Query text can be written by any user whose history the active role can
+    view. Keeping escape and other C0/C1 controls out of Rich/Textual prevents
+    terminal escape-sequence injection while preserving tabs and newlines.
+    """
+    return _TERMINAL_CONTROL_RE.sub("", str(value or ""))
 
 
 def queued_ms(r: dict) -> int:
@@ -230,11 +243,13 @@ def _quote_ident(name: str) -> str:
     return '"' + str(name).replace('"', '""') + '"'
 
 
-def connect(connection_name: "str | None", role: "str | None"):
+def connect(
+    connection_name: "str | None", role: "str | None", cache_credentials: bool = True
+):
     import snowflake.connector
 
     name = connection_name or default_connection_name()
-    kwargs = {"client_store_temporary_credential": True}
+    kwargs = {"client_store_temporary_credential": cache_credentials}
     if name:
         kwargs["connection_name"] = name
     if role:
@@ -273,7 +288,13 @@ def _ensure_database(conn) -> None:
 
 def _rows_from_cursor(cur) -> "list[dict]":
     cols = [c[0].lower() for c in cur.description]
-    return [dict(zip(cols, row)) for row in cur.fetchall()]
+    return [
+        {
+            column: safe_terminal_text(value) if isinstance(value, str) else value
+            for column, value in zip(cols, row)
+        }
+        for row in cur.fetchall()
+    ]
 
 
 def _query_history_columns(conn) -> set[str]:
@@ -298,8 +319,10 @@ def _query_history_columns(conn) -> set[str]:
 class SnowflakeSource:
     """Live source backed by a persistent connection (one login, reused)."""
 
-    def __init__(self, connection_name, role, show_snowtop_queries=False):
-        self.conn = connect(connection_name, role)
+    def __init__(
+        self, connection_name, role, show_snowtop_queries=False, cache_credentials=True
+    ):
+        self.conn = connect(connection_name, role, cache_credentials)
         self.query_tag = None
         if not show_snowtop_queries:
             self.query_tag = f"snowtop:{uuid.uuid4().hex}"
@@ -539,6 +562,7 @@ def run_tui(args) -> int:
                 src = SnowflakeSource(
                     self.args.connection, self.args.role,
                     getattr(self.args, "show_snowtop_queries", False),
+                    not getattr(self.args, "no_credential_cache", False),
                 )
             except Exception as e:  # noqa: BLE001
                 self.call_from_thread(self._set_status, f"[red]Connect failed:[/] {e}")
@@ -801,7 +825,8 @@ def run_once(args) -> int:
     console = Console()
     try:
         source = DemoSource() if args.demo else SnowflakeSource(
-            args.connection, args.role, getattr(args, "show_snowtop_queries", False)
+            args.connection, args.role, getattr(args, "show_snowtop_queries", False),
+            not getattr(args, "no_credential_cache", False),
         )
     except Exception as e:  # noqa: BLE001
         console.print(f"[red]Failed to connect:[/red] {e}")
@@ -876,6 +901,8 @@ def parse_args(argv=None):
                    help="Live auto-refresh interval in seconds (default: 3; 0 disables).")
     p.add_argument("--warn", type=int, default=300,
                    help="Flag queries running longer than N seconds (default: 300).")
+    p.add_argument("--no-credential-cache", action="store_true",
+                   help="Don't persist the SSO/MFA credential in the OS keychain.")
     p.add_argument("--show-snowtop-queries", action="store_true",
                    help="Include Snowtop's own metadata queries in the results.")
     p.add_argument("--once", action="store_true", help="Print one snapshot and exit (no TUI).")
@@ -884,6 +911,14 @@ def parse_args(argv=None):
     args = p.parse_args(argv)
     args.mode = "history" if args.history else "live"
     args.since_min = args.since if isinstance(args.since, int) else parse_since(args.since)
+    if not 1 <= args.limit <= _MAX_RESULT_LIMIT:
+        p.error(f"--limit must be between 1 and {_MAX_RESULT_LIMIT}")
+    if not 0 <= args.since_min <= _MAX_HISTORY_MINUTES:
+        p.error("--since must be between 0m and 7d")
+    if args.interval < 0 or 0 < args.interval < 1:
+        p.error("--interval must be 0 (disabled) or at least 1 second")
+    if args.warn < 0:
+        p.error("--warn must be non-negative")
     return args
 
 

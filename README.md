@@ -59,6 +59,9 @@ chmod 700 ~/.snowflake
 chmod 600 ~/.snowflake/connections.toml ~/.snowflake/config.toml
 ```
 
+By default, the Snowflake connector caches the browser SSO/MFA credential in your OS keychain.
+Use `--no-credential-cache` on shared machines if you prefer to sign in every time.
+
 Snowtop shows your own query history with an ordinary role. To see other users' queries, grant
 the selected role `MONITOR` or `OPERATE` on the relevant warehouses; `ACCOUNTADMIN` is not
 needed. Snowflake's [QUERY_HISTORY privileges](https://docs.snowflake.com/en/sql-reference/functions/query_history)
@@ -74,6 +77,10 @@ At startup Snowtop connects with this profile, selects its configured database (
 database the role can use), applies a unique query tag to its private session, and queries
 `INFORMATION_SCHEMA.QUERY_HISTORY()`. That history is limited to the previous seven days and
 contains only the queries the active role can view.
+
+Query text, error messages, query tags, and user names can be sensitive. Run Snowtop only in a
+trusted terminal and use a role scoped to the query history you are allowed to inspect. Snowtop
+removes terminal control codes from Snowflake-provided text before displaying it.
 
 ## Run
 
@@ -149,6 +156,8 @@ uv run snowtop -r SNOWTOP_MONITOR
     --limit N      max rows to fetch (default 1000)
 -n, --interval     live auto-refresh seconds (default 3; 0 disables)
     --warn N       flag queries running longer than N seconds (default 300)
+    --no-credential-cache
+                 do not persist the SSO/MFA credential in the OS keychain
     --show-snowtop-queries
                  include Snowtop's own metadata queries
     --once         print one snapshot and exit (no TUI)
