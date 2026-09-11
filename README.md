@@ -116,6 +116,7 @@ follow its printed instructions for your shell.
 |---|---|
 | ↑ / ↓ | move the row cursor (updates the detail pane) |
 | `Enter` | lock/unlock the current query in the detail pane while live results refresh |
+| `c` | copy the SQL currently shown in the detail pane to the system clipboard |
 | `h` | toggle **live ↔ history** |
 | `s` | cycle status filter (All → Running → Queued → Success → Failed) |
 | `f` | jump to the filter box (type to match user or SQL; Enter returns to the table) |

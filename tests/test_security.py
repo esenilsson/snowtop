@@ -1,6 +1,7 @@
 import unittest
+from unittest.mock import patch
 
-from snowtop.app import _rows_from_cursor, parse_args, safe_terminal_text
+from snowtop.app import _rows_from_cursor, copy_to_system_clipboard, parse_args, safe_terminal_text
 
 
 class Cursor:
@@ -30,3 +31,11 @@ class SecurityTests(unittest.TestCase):
 
     def test_credential_cache_can_be_disabled(self):
         self.assertTrue(parse_args(["--no-credential-cache"]).no_credential_cache)
+
+    @patch("snowtop.app.subprocess.run")
+    @patch("snowtop.app.sys.platform", "darwin")
+    def test_copy_uses_the_macos_system_clipboard(self, run):
+        self.assertTrue(copy_to_system_clipboard("select 1"))
+        run.assert_called_once_with(
+            ["pbcopy"], input="select 1", text=True, check=True, timeout=5
+        )

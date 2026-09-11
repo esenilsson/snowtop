@@ -20,6 +20,8 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shutil
+import subprocess
 import sys
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -192,6 +194,26 @@ def safe_terminal_text(value) -> str:
     terminal escape-sequence injection while preserving tabs and newlines.
     """
     return _TERMINAL_CONTROL_RE.sub("", str(value or ""))
+
+
+def copy_to_system_clipboard(text: str) -> bool:
+    """Copy text without relying on the terminal's OSC 52 clipboard support."""
+    if sys.platform == "darwin":
+        commands = [["pbcopy"]]
+    elif sys.platform == "win32":
+        commands = [["clip.exe"]]
+    else:
+        commands = [
+            command for command in (["wl-copy"], ["xclip", "-selection", "clipboard"], ["xsel", "--clipboard", "--input"])
+            if shutil.which(command[0])
+        ]
+    for command in commands:
+        try:
+            subprocess.run(command, input=text, text=True, check=True, timeout=5)
+            return True
+        except (OSError, subprocess.SubprocessError):
+            continue
+    return False
 
 
 def queued_ms(r: dict) -> int:
@@ -504,6 +526,7 @@ def run_tui(args) -> int:
         BINDINGS = [
             ("q", "quit", "Quit"),
             ("r", "reload", "Reload"),
+            ("c", "copy_sql", "Copy SQL"),
             ("enter", "toggle_detail_lock", "Lock view"),
             ("h", "toggle_mode", "Live/History"),
             ("s", "cycle_status", "Status"),
@@ -753,6 +776,17 @@ def run_tui(args) -> int:
             if self.source is None:
                 return
             self._load_worker()
+
+        def action_copy_sql(self):
+            """Copy the SQL currently shown in the detail pane."""
+            row = self.locked_row or self.row_index.get(self.selected_query_id)
+            sql = (row or {}).get("query_text") or ""
+            if not sql:
+                self._set_status("[yellow]No SQL text available to copy[/]")
+            elif copy_to_system_clipboard(sql):
+                self._set_status("[green]Copied SQL to system clipboard[/]")
+            else:
+                self._set_status("[red]Couldn't access the system clipboard[/]")
 
         def action_toggle_detail_lock(self):
             """Keep the current SQL in the detail pane while live data refreshes."""
