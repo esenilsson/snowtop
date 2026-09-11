@@ -4,7 +4,7 @@ A terminal UI for **watching Snowflake queries** — like Snowsight's Query Hist
 terminal. Live watch of what's running right now, plus a history browser over any time window.
 
 - **Live mode** — RUNNING / QUEUED queries, auto-refreshing.
-- **History mode** — every query in a time window, all statuses (Success/Failed/…), sortable.
+- **History snapshots** — every query in a time window, all statuses (Success/Failed/…), then exit.
 - **Select any row** → detail pane with the **full, syntax-highlighted SQL** plus metadata
   (target table, dbt model/env, warehouse, role, timings, spill/lock warnings, error).
 
@@ -90,8 +90,9 @@ uv run snowtop --demo
 
 # the real thing (opens SSO browser once, then caches the token):
 uv run snowtop                 # live TUI
-uv run snowtop --history       # start in history mode (last 1 day)
+uv run snowtop --history       # print history once (last 1 day), then exit
 uv run snowtop --history --since 4h
+uv run snowtop --history --interactive  # browse history in the TUI
 
 # include Snowtop's own metadata queries (they are hidden by default):
 uv run snowtop --show-snowtop-queries
@@ -134,7 +135,7 @@ For piping/cron, `--once` prints a table and exits (no TUI):
 
 ```bash
 uv run snowtop --once                        # ongoing queries
-uv run snowtop --once --history --since 1d   # last day
+uv run snowtop --history --since 1d              # history already runs once by default
 ```
 
 ## Whose queries you see (scope)
@@ -152,7 +153,8 @@ uv run snowtop -r SNOWTOP_MONITOR
 ```
 -c, --connection   named connection from connections.toml (default: your default)
 -r, --role         override role (use MONITOR/OPERATE on relevant warehouses to see other users)
-    --history      start in history mode instead of live
+    --history      print one history snapshot instead of starting the live TUI
+    --interactive  open the TUI (use with --history to browse history)
     --since DUR    history window: 30m / 4h / 1d (default 1d)
     --limit N      max rows to fetch (default 1000)
 -n, --interval     live auto-refresh seconds (default 3; 0 disables)

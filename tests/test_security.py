@@ -32,6 +32,10 @@ class SecurityTests(unittest.TestCase):
     def test_credential_cache_can_be_disabled(self):
         self.assertTrue(parse_args(["--no-credential-cache"]).no_credential_cache)
 
+    def test_history_defaults_to_a_one_shot_snapshot(self):
+        self.assertTrue(parse_args(["--history"]).once)
+        self.assertFalse(parse_args(["--history", "--interactive"]).once)
+
     @patch("snowtop.app.subprocess.run")
     @patch("snowtop.app.sys.platform", "darwin")
     def test_copy_uses_the_macos_system_clipboard(self, run):

@@ -924,9 +924,11 @@ def parse_args(argv=None):
     p.add_argument("-c", "--connection", default=None,
                    help="Named connection from connections.toml (default: your default).")
     p.add_argument("-r", "--role", default=None,
-                   help="Override the role (use one with account-wide MONITOR to see all users).")
+                   help="Override the role (MONITOR/OPERATE on a warehouse shows its queries).")
     p.add_argument("--history", action="store_true",
-                   help="Start in history mode (all statuses over a time window) instead of live.")
+                   help="Print one history snapshot (all statuses over a time window).")
+    p.add_argument("--interactive", action="store_true",
+                   help="Open the TUI instead of printing a one-shot history snapshot.")
     p.add_argument("--since", type=parse_since, default="1d", metavar="DUR",
                    help="History window, e.g. 30m / 4h / 1d (default: 1d).")
     p.add_argument("--limit", type=int, default=1000,
@@ -943,7 +945,11 @@ def parse_args(argv=None):
     p.add_argument("--demo", action="store_true",
                    help="Use synthetic data (no Snowflake connection); for trying the UI.")
     args = p.parse_args(argv)
+    if args.once and args.interactive:
+        p.error("--once and --interactive can't be used together")
     args.mode = "history" if args.history else "live"
+    if args.history and not args.interactive:
+        args.once = True
     args.since_min = args.since if isinstance(args.since, int) else parse_since(args.since)
     if not 1 <= args.limit <= _MAX_RESULT_LIMIT:
         p.error(f"--limit must be between 1 and {_MAX_RESULT_LIMIT}")
